@@ -28,6 +28,6 @@
     "vitest": "^5.0.0"
   },
   "size-limit": [
-    { "path": "dist/index.js", "limit": "3 KB", "gzip": true }
+    { "path": "dist/index.js", "limit": "3 KiB", "gzip": true }
   ]
 }

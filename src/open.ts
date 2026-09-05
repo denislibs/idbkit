@@ -54,9 +54,10 @@ async function upgrade(
   schema: CompiledSchema,
   migrations: Record<number, Migration>,
 ): Promise<void> {
+  const names = db.objectStoreNames;
   for (const name in schema) {
     const s = schema[name];
-    const store = db.objectStoreNames.contains(name)
+    const store = names.contains(name)
       ? tx.raw.objectStore(name)
       : db.createObjectStore(name, { keyPath: s.key, autoIncrement: s.autoIncrement });
     for (const iname in s.indexes) {
@@ -64,7 +65,7 @@ async function upgrade(
       if (store.indexNames.contains(iname)) {
         const existing = store.index(iname);
         const same =
-          sameKeyPath(existing.keyPath as string | string[], i.path as string | string[]) &&
+          String(existing.keyPath) === String(i.path) &&
           existing.unique === i.unique &&
           existing.multiEntry === i.multiEntry;
         if (same) continue;
@@ -81,21 +82,17 @@ async function upgrade(
   for (const v of versions) await migrations[v](tx as unknown as UpgradeTransaction);
 
   for (const name in schema) {
-    if (!db.objectStoreNames.contains(name)) continue;
+    if (!names.contains(name)) continue;
     const store = tx.raw.objectStore(name);
     for (const iname of Array.from(store.indexNames)) {
       if (!(iname in schema[name].indexes)) store.deleteIndex(iname);
     }
   }
   if (isDev()) {
-    for (const name of Array.from(db.objectStoreNames)) {
+    for (const name of Array.from(names)) {
       if (!(name in schema)) console.warn(`idbkit: store "${name}" not in schema of "${db.name}"`);
     }
   }
-}
-
-function sameKeyPath(a: string | string[], b: string | string[]): boolean {
-  return typeof a === 'string' ? a === b : Array.isArray(b) && a.length === b.length && a.every((x, i) => x === b[i]);
 }
 
 function isDev(): boolean {
