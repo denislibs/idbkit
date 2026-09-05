@@ -2,7 +2,7 @@ import { IdbError, SchemaError } from './errors';
 import type { Key } from './range';
 import { compileSchema, type CompiledSchema, type StoresConfig } from './schema';
 import { TransactionImpl, UpgradeTransactionImpl, type AnyQuery } from './tx';
-import type { Database, Listener, Migration, OpenOptions, Unsubscribe, UpgradeTransaction } from './types';
+import type { Cursor, Database, Listener, Migration, OpenOptions, Unsubscribe, UpgradeTransaction } from './types';
 
 export async function openDB<S, C extends StoresConfig<S>>(name: string, opts: OpenOptions<S, C>): Promise<Database<S, C>> {
   validate(opts);
@@ -113,28 +113,34 @@ export class DatabaseImpl {
   }
 
   transaction(stores: string | readonly string[], mode: IDBTransactionMode = 'readonly'): TransactionImpl {
-    return new TransactionImpl(this.raw.transaction(stores as string | string[], mode), {});
+    let raw: IDBTransaction;
+    try {
+      raw = this.raw.transaction(stores as string | string[], mode);
+    } catch (cause) {
+      throw new IdbError((cause as Error)?.message ?? 'Failed to start transaction', { cause, op: 'transaction' });
+    }
+    return new TransactionImpl(raw, {});
   }
 
   get(store: string, key: Key): Promise<unknown> {
-    return this.transaction(store).get(store, key);
+    return this.read(store, (tx) => tx.get(store, key));
   }
 
   getAll(store: string, opts?: AnyQuery): Promise<unknown[]> {
-    return this.transaction(store).getAll(store, opts);
+    return this.read(store, (tx) => tx.getAll(store, opts));
   }
 
   getAllKeys(store: string, opts?: AnyQuery): Promise<Key[]> {
-    return this.transaction(store).getAllKeys(store, opts);
+    return this.read(store, (tx) => tx.getAllKeys(store, opts));
   }
 
   count(store: string, opts?: AnyQuery): Promise<number> {
-    return this.transaction(store).count(store, opts);
+    return this.read(store, (tx) => tx.count(store, opts));
   }
 
   /** readwrite so cursor.update/delete work without an explicit transaction. */
-  iterate(store: string, opts?: AnyQuery) {
-    return this.transaction(store, 'readwrite').iterate(store, opts);
+  async *iterate(store: string, opts?: AnyQuery): AsyncIterable<Cursor<unknown>> {
+    yield* this.transaction(store, 'readwrite').iterate(store, opts);
   }
 
   put(store: string, value: unknown): Promise<Key> {
@@ -167,5 +173,10 @@ export class DatabaseImpl {
     const result = await fn(tx);
     await tx.done;
     return result;
+  }
+
+  /** Routes a synchronous `transaction()` throw (e.g. after `close()`) through the returned promise instead of throwing. */
+  private async read<T>(store: string, fn: (tx: TransactionImpl) => Promise<T>): Promise<T> {
+    return fn(this.transaction(store));
   }
 }

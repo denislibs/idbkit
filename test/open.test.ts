@@ -81,4 +81,15 @@ describe('Database operations', () => {
     expect(db2.version).toBe(2);
     db2.close();
   });
+
+  it('operations after close reject with IdbError instead of throwing', async () => {
+    const db = await openDB('closed', { version: 1, stores, broadcast: false });
+    db.close();
+    await expect(db.get('users', 'a')).rejects.toBeInstanceOf(IdbError);
+    await expect(db.getAll('users')).rejects.toBeInstanceOf(IdbError);
+    await expect(db.count('users')).rejects.toBeInstanceOf(IdbError);
+    await expect(db.put('users', { id: 'a', email: 'a@x', age: 1 })).rejects.toBeInstanceOf(IdbError);
+    await expect(db.iterate('users')[Symbol.asyncIterator]().next()).rejects.toBeInstanceOf(IdbError);
+    expect(() => db.transaction('users')).toThrow(IdbError);
+  });
 });
