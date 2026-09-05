@@ -53,6 +53,7 @@ export class Events {
 
   close(): void {
     this.channel?.close();
+    this.channel = undefined;
     this.subs.clear();
   }
 

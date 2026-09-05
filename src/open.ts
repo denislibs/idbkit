@@ -18,10 +18,12 @@ export async function openDB<S, C extends StoresConfig<S>>(name: string, opts: O
       upgrade(req.result, tx, schema, migrations).catch((err: unknown) => {
         upgradeError = err;
         try {
-          req.transaction!.abort();
+          req.transaction?.abort();
+          if (req.transaction) return;
         } catch {
-          /* already aborted */
+          /* fall through to log */
         }
+        console.error(`idbkit: migration failed (${name} v${opts.version})`, err);
       });
     };
     req.onerror = () =>
@@ -143,8 +145,8 @@ export class DatabaseImpl {
 
   /**
    * readwrite so cursor.update/delete work without an explicit transaction. Awaits `done` on every
-   * exit path so change events have been delivered when the loop ends; on an abnormal exit the
-   * abort rejection is swallowed so it cannot mask the consumer's own error.
+   * exit path so change events have been delivered when the loop ends; on an abnormal exit `done`
+   * is still awaited but its rejection is swallowed so it cannot mask the consumer's own error.
    */
   async *iterate(store: string, opts?: AnyQuery): AsyncIterable<Cursor<unknown>> {
     const tx = this.transaction(store, 'readwrite');

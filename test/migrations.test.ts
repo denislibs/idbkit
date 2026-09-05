@@ -121,6 +121,22 @@ describe('upgrade', () => {
     })).rejects.toBeInstanceOf(IdbError);
   });
 
+  it('logs when a migration fails after the upgrade transaction committed', async () => {
+    const stores = defineStores<{ s: { id: number } }>()({ s: { key: 'id' } });
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const db = await openDB('late', {
+        version: 1, stores, broadcast: false,
+        migrations: { 1: async (tx) => { await new Promise((r) => setTimeout(r, 0)); await tx.add('s', { id: 1 }); } },
+      });
+      await vi.waitFor(() => expect(error).toHaveBeenCalledTimes(1));
+      expect(String(error.mock.calls[0][0])).toContain('migration failed');
+      db.close();
+    } finally {
+      error.mockRestore();
+    }
+  });
+
   it('onVersionChange fires on the old connection when a newer version opens', async () => {
     const stores = defineStores<{ s: { id: number } }>()({ s: { key: 'id' } });
     const onVersionChange = vi.fn();

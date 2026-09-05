@@ -184,3 +184,8 @@ it('key subscriptions do not trigger old-value reads', async () => {
   expect(get).not.toHaveBeenCalled();
   get.mockRestore();
 });
+
+it('an invalid key rejects with IdbError when a range subscription forces an old-value read', async () => {
+  db.subscribe('users', { index: 'byAge', range: { gte: 0 } }, () => {});
+  await expect(db.put('users', { id: {} as unknown as string, email: 'e', age: 1 })).rejects.toBeInstanceOf(IdbError);
+});

@@ -38,7 +38,7 @@ export class TransactionImpl {
     try {
       s = this.raw.objectStore(name);
     } catch (cause) {
-      throw new IdbError(`Store "${name}" not in transaction`, { cause, store: name });
+      throw new IdbError(`Cannot access store "${name}"`, { cause, store: name });
     }
     return index ? s.index(index) : s;
   }
@@ -60,7 +60,7 @@ export class TransactionImpl {
   }
 
   iterate(store: string, opts: AnyQuery = {}): AsyncIterable<Cursor<unknown>> {
-    return iterate(() => this.store(store, opts.index), toKeyRange(opts.range), opts.direction, opts.limit, store, {
+    return iterate(() => this.store(store, opts.index), opts.range, opts.direction, opts.limit, store, {
       onUpdate: (pk, before, after) => this.record(store, pk, before, after),
       onDelete: (pk, before) => this.record(store, pk, before, undefined),
     });
@@ -95,7 +95,7 @@ export class TransactionImpl {
   /** Old value is read only when a range subscription on this store needs it. */
   private readBefore(store: string, s: IDBObjectStore, key: Key | undefined): Promise<unknown> {
     if (key === undefined || !this.ctx.events?.needsBefore(store)) return Promise.resolve(undefined);
-    return request(s.get(key), store, 'get');
+    return request(() => s.get(key), store, 'get');
   }
 
   private record(store: string, key: Key, before: unknown, after: unknown): void {

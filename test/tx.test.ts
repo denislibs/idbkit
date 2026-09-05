@@ -98,6 +98,15 @@ describe('done and abort', () => {
     await tx.add('posts', { id: 1 }).catch(() => {});
     await expect(tx.done).rejects.toBeInstanceOf(IdbError);
   });
+
+  it('an operation after done on a completed transaction rejects with IdbError', async () => {
+    const tx = rw('users');
+    await tx.put('users', { id: 'z', name: 'Z', age: 1 });
+    await tx.done;
+    const err = await tx.put('users', { id: 'y', name: 'Y', age: 2 }).catch((e) => e);
+    expect(err).toMatchObject({ name: 'IdbError' });
+    expect((err.cause as DOMException).name).toBe('InvalidStateError');
+  });
 });
 
 describe('iterate', () => {
@@ -140,6 +149,28 @@ describe('iterate', () => {
     await expect(bad[Symbol.asyncIterator]().next()).rejects.toMatchObject({ name: 'IdbError', store: 'posts' });
     const badIndex = ro('users').iterate('users', { index: 'nope' });
     await expect(badIndex[Symbol.asyncIterator]().next()).rejects.toMatchObject({ name: 'IdbError', store: 'users', op: 'iterate' });
+  });
+
+  it('cursor.update on a readonly transaction rejects with IdbError', async () => {
+    const tx = ro('users');
+    for await (const cur of tx.iterate('users')) {
+      await expect(cur.update({ ...(cur.value as User), name: 'x' })).rejects.toBeInstanceOf(IdbError);
+      break;
+    }
+  });
+
+  it('continuing after an external await rejects with IdbError', async () => {
+    const tx = ro('users');
+    const it = tx.iterate('users')[Symbol.asyncIterator]();
+    await it.next();
+    await new Promise((r) => setTimeout(r, 0));
+    await expect(it.next()).rejects.toBeInstanceOf(IdbError);
+  });
+
+  it('an invalid range rejects with IdbError instead of throwing', async () => {
+    const it = ro('users').iterate('users', { range: { gte: {} as unknown as string } })[Symbol.asyncIterator]();
+    await expect(it.next()).rejects.toBeInstanceOf(IdbError);
+    await expect(ro('users').getAll('users', { range: { gte: {} as unknown as string } })).rejects.toBeInstanceOf(IdbError);
   });
 });
 

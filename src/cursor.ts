@@ -1,5 +1,5 @@
 import { IdbError, request } from './errors';
-import type { Key } from './range';
+import { toKeyRange, type Key, type KeyRange } from './range';
 import type { Cursor } from './types';
 
 export type CursorHooks = {
@@ -13,7 +13,7 @@ export type CursorHooks = {
  */
 export async function* iterate<V>(
   source: () => IDBObjectStore | IDBIndex,
-  range: IDBKeyRange | undefined,
+  range: KeyRange<Key> | undefined,
   direction: IDBCursorDirection | undefined,
   limit: number | undefined,
   store: string,
@@ -21,13 +21,13 @@ export async function* iterate<V>(
 ): AsyncGenerator<Cursor<V>, void, undefined> {
   let req: IDBRequest<IDBCursorWithValue | null>;
   try {
-    req = source().openCursor(range, direction);
+    req = source().openCursor(toKeyRange(range), direction);
   } catch (cause) {
     throw cause instanceof IdbError
       ? cause
       : new IdbError((cause as Error)?.message ?? 'Failed to open cursor', { cause, store, op: 'iterate' });
   }
-  let cur = await request(req, store, 'iterate');
+  let cur = await request(() => req, store, 'iterate');
   let n = 0;
   while (cur) {
     const c = cur;
@@ -37,16 +37,15 @@ export async function* iterate<V>(
       primaryKey: c.primaryKey,
       value: before,
       async update(value) {
-        await request(c.update(value), store, 'update');
+        await request(() => c.update(value), store, 'update');
         hooks?.onUpdate(c.primaryKey, before, value);
       },
       async delete() {
-        await request(c.delete(), store, 'delete');
+        await request(() => c.delete(), store, 'delete');
         hooks?.onDelete(c.primaryKey, before);
       },
     };
     if (limit !== undefined && ++n >= limit) return;
-    c.continue();
-    cur = await request(req, store, 'iterate');
+    cur = await request(() => (c.continue(), req), store, 'iterate');
   }
 }

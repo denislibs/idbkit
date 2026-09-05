@@ -7,15 +7,15 @@ beforeEach(resetIndexedDB);
 it('request resolves with the request result', async () => {
   const db = await openRaw('e1', (d) => d.createObjectStore('s', { keyPath: 'id' }));
   const store = db.transaction('s', 'readwrite').objectStore('s');
-  expect(await request(store.put({ id: 7 }))).toBe(7);
+  expect(await request(() => store.put({ id: 7 }))).toBe(7);
   db.close();
 });
 
 it('request rejects with IdbError carrying cause, store and op', async () => {
   const db = await openRaw('e2', (d) => d.createObjectStore('s', { keyPath: 'id' }));
   const store = db.transaction('s', 'readwrite').objectStore('s');
-  await request(store.add({ id: 1 }));
-  const err = await request(store.add({ id: 1 }), 's', 'add').catch((e: unknown) => e);
+  await request(() => store.add({ id: 1 }));
+  const err = await request(() => store.add({ id: 1 }), 's', 'add').catch((e: unknown) => e);
   expect(err).toBeInstanceOf(IdbError);
   expect(err).toBeInstanceOf(Error);
   expect((err as IdbError).name).toBe('IdbError');
