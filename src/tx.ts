@@ -66,7 +66,7 @@ export class TransactionImpl {
   }
 
   iterate(store: string, opts: AnyQuery = {}): AsyncIterable<Cursor<unknown>> {
-    return iterate(this.source(store, opts.index), toKeyRange(opts.range), opts.direction, opts.limit, store, {
+    return iterate(() => this.source(store, opts.index), toKeyRange(opts.range), opts.direction, opts.limit, store, {
       onUpdate: (pk, before, after) => this.record(store, pk, before, after),
       onDelete: (pk, before) => this.record(store, pk, before, undefined),
     });

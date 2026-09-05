@@ -134,6 +134,13 @@ describe('iterate', () => {
       { id: 'c', name: 'CID', age: 40 },
     ]);
   });
+
+  it('unknown store or index rejects with IdbError on first next()', async () => {
+    const bad = ro('users').iterate('posts');
+    await expect(bad[Symbol.asyncIterator]().next()).rejects.toMatchObject({ name: 'IdbError', store: 'posts' });
+    const badIndex = ro('users').iterate('users', { index: 'nope' });
+    await expect(badIndex[Symbol.asyncIterator]().next()).rejects.toMatchObject({ name: 'IdbError', store: 'users', op: 'iterate' });
+  });
 });
 
 describe('UpgradeTransactionImpl', () => {

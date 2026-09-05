@@ -1,4 +1,4 @@
-import { request } from './errors';
+import { IdbError, request } from './errors';
 import type { Key } from './range';
 import type { Cursor } from './types';
 
@@ -12,14 +12,21 @@ export type CursorHooks = {
  * the transaction alive; awaiting anything else (fetch, timers) closes it and the next `continue()` throws.
  */
 export async function* iterate<V>(
-  source: IDBObjectStore | IDBIndex,
+  source: () => IDBObjectStore | IDBIndex,
   range: IDBKeyRange | undefined,
   direction: IDBCursorDirection | undefined,
   limit: number | undefined,
   store: string,
   hooks?: CursorHooks,
 ): AsyncGenerator<Cursor<V>, void, undefined> {
-  const req = source.openCursor(range, direction);
+  let req: IDBRequest<IDBCursorWithValue | null>;
+  try {
+    req = source().openCursor(range, direction);
+  } catch (cause) {
+    throw cause instanceof IdbError
+      ? cause
+      : new IdbError((cause as Error)?.message ?? 'Failed to open cursor', { cause, store, op: 'iterate' });
+  }
   let cur = await request(req, store, 'iterate');
   let n = 0;
   while (cur) {
