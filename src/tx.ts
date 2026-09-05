@@ -1,18 +1,13 @@
 import { iterate } from './cursor';
 import { IdbError, request, run } from './errors';
+import type { Events } from './events';
 import { toKeyRange, type Key, type KeyRange } from './range';
-import type { ChangeEntry, Cursor, IndexValues } from './types';
+import type { ChangeEntry, Cursor } from './types';
 
 export type AnyQuery = { index?: string; range?: KeyRange<Key>; limit?: number; direction?: IDBCursorDirection };
 export type Pending = { store: string; keys: Key[] | null; entries: ChangeEntry[] };
 
-/** Replaced by the real `Events` import in the events task. */
-export type EventsLike = {
-  needsBefore(store: string): boolean;
-  pick(store: string, value: unknown): IndexValues;
-  emit(changes: Pending[]): void;
-};
-export type Ctx = { events?: EventsLike };
+export type Ctx = { events?: Events };
 
 export class TransactionImpl {
   readonly done: Promise<void>;

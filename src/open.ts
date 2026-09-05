@@ -1,3 +1,4 @@
+import { Events, type Filter } from './events';
 import { IdbError, SchemaError } from './errors';
 import type { Key } from './range';
 import { compileSchema, type CompiledSchema, type StoresConfig } from './schema';
@@ -102,7 +103,11 @@ function isDev(): boolean {
 }
 
 export class DatabaseImpl {
-  constructor(readonly raw: IDBDatabase, protected schema: CompiledSchema, protected broadcast: boolean) {}
+  private events: Events;
+
+  constructor(readonly raw: IDBDatabase, schema: CompiledSchema, broadcast: boolean) {
+    this.events = new Events(schema, broadcast ? `idbkit:${raw.name}` : undefined);
+  }
 
   get name(): string {
     return this.raw.name;
@@ -119,7 +124,7 @@ export class DatabaseImpl {
     } catch (cause) {
       throw new IdbError((cause as Error)?.message ?? 'Failed to start transaction', { cause, op: 'transaction' });
     }
-    return new TransactionImpl(raw, {});
+    return new TransactionImpl(raw, { events: this.events });
   }
 
   get(store: string, key: Key): Promise<unknown> {
@@ -138,9 +143,14 @@ export class DatabaseImpl {
     return this.read(store, (tx) => tx.count(store, opts));
   }
 
-  /** readwrite so cursor.update/delete work without an explicit transaction. */
+  /**
+   * readwrite so cursor.update/delete work without an explicit transaction. Awaits `done` so
+   * change events (fired on `complete`) have been delivered by the time full iteration resolves.
+   */
   async *iterate(store: string, opts?: AnyQuery): AsyncIterable<Cursor<unknown>> {
-    yield* this.transaction(store, 'readwrite').iterate(store, opts);
+    const tx = this.transaction(store, 'readwrite');
+    yield* tx.iterate(store, opts);
+    await tx.done;
   }
 
   put(store: string, value: unknown): Promise<Key> {
@@ -159,11 +169,12 @@ export class DatabaseImpl {
     return this.write(store, (tx) => tx.clear(store));
   }
 
-  subscribe(_store: string, _a: unknown, _b?: Listener): Unsubscribe {
-    throw new Error('not implemented');
+  subscribe(store: string, a: Filter | Listener, b?: Listener): Unsubscribe {
+    return typeof a === 'function' ? this.events.subscribe(store, undefined, a) : this.events.subscribe(store, a, b!);
   }
 
   close(): void {
+    this.events.close();
     this.raw.close();
   }
 
