@@ -186,7 +186,7 @@ type OpenOptions<S> = {
 `Migration = (tx: UpgradeTransaction) => void | Promise<void>`
 
 `UpgradeTransaction` — обычная `Transaction` (см. §6) без типизации по схеме
-(`store: string`, значения `unknown`), плюс:
+(`store: string`, значения `any` — сознательно, ради эргономики миграций вроде `cur.value.age`), плюс:
 
 - `tx.deleteStore(name: string): void`
 - `tx.oldVersion: number`, `tx.newVersion: number`
