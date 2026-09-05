@@ -71,25 +71,23 @@ export class Events {
     }
   }
 
-  private narrow(c: Change, f: Filter | undefined): Change | undefined {
-    if (!f || c.keys === null) return c;
-    const entries = (c.entries ?? []).filter((e) =>
-      'key' in f ? indexedDB.cmp(e.key, f.key) === 0 : this.matches(c.store, e, f, c.source),
-    );
-    if (!entries.length) return undefined;
-    return { ...c, keys: entries.map((e) => e.key), entries };
-  }
-
   /**
-   * An entry is relevant if its index key before or after the change falls in the range.
+   * An entry passes a range filter if its index key before or after the change falls in the range.
    * Without `before` we cannot tell whether the record left the range, so remote changes
    * (the other tab may not have read it) and entries with neither side are treated as relevant.
    */
-  private matches(store: string, e: ChangeEntry, f: { index: string; range: KeyRange<Key> }, source: Change['source']): boolean {
-    if (!e.before && (source === 'remote' || !e.after)) return true;
-    const path = this.schema[store]?.indexes[f.index]?.path;
-    if (!path) return true;
-    const keyOf = (v: IndexValues) => (typeof path === 'string' ? v[path] : path.map((p) => v[p])) as Key;
-    return (!!e.before && inRange(keyOf(e.before), f.range)) || (!!e.after && inRange(keyOf(e.after), f.range));
+  private narrow(c: Change, f: Filter | undefined): Change | undefined {
+    if (!f || c.keys === null) return c;
+    const matches = (e: ChangeEntry): boolean => {
+      if ('key' in f) return indexedDB.cmp(e.key, f.key) === 0;
+      if (!e.before && (c.source === 'remote' || !e.after)) return true;
+      const path = this.schema[c.store]?.indexes[f.index]?.path;
+      if (!path) return true;
+      const keyOf = (v: IndexValues) => (typeof path === 'string' ? v[path] : path.map((p) => v[p])) as Key;
+      return (!!e.before && inRange(keyOf(e.before), f.range)) || (!!e.after && inRange(keyOf(e.after), f.range));
+    };
+    const entries = (c.entries ?? []).filter(matches);
+    if (!entries.length) return undefined;
+    return { ...c, keys: entries.map((e) => e.key), entries };
   }
 }

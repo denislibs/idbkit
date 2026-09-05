@@ -19,23 +19,25 @@ export class SchemaError extends Error {
   }
 }
 
-/** Promisify an IDBRequest. Handlers are replaced on each call, so it is safe to re-await a cursor request. */
-export function request<T>(req: IDBRequest<T>, store?: string, op?: string): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () =>
-      reject(new IdbError(req.error?.message ?? 'IndexedDB request failed', { cause: req.error, store, op }));
-  });
-}
-
-/** Like `request`, but a synchronous throw from `fn` (e.g. ReadOnlyError) becomes an IdbError rejection. */
-export function run<T>(fn: () => IDBRequest<T>, store?: string, op?: string): Promise<T> {
-  let req: IDBRequest<T>;
-  try {
-    req = fn();
-  } catch (cause) {
-    if (cause instanceof IdbError) return Promise.reject(cause);
-    return Promise.reject(new IdbError((cause as Error)?.message ?? 'IndexedDB call failed', { cause, store, op }));
+/**
+ * Promisify an IDBRequest. Handlers are replaced on each call, so it is safe to re-await a cursor request.
+ * Given a thunk instead, a synchronous throw from it (e.g. ReadOnlyError) becomes an IdbError rejection,
+ * with an already-thrown IdbError passed through unchanged.
+ */
+export function request<T>(req: IDBRequest<T> | (() => IDBRequest<T>), store?: string, op?: string): Promise<T> {
+  let r: IDBRequest<T>;
+  if (typeof req === 'function') {
+    try {
+      r = req();
+    } catch (cause) {
+      if (cause instanceof IdbError) return Promise.reject(cause);
+      return Promise.reject(new IdbError((cause as Error)?.message ?? 'IndexedDB call failed', { cause, store, op }));
+    }
+  } else {
+    r = req;
   }
-  return request(req, store, op);
+  return new Promise<T>((resolve, reject) => {
+    r.onsuccess = () => resolve(r.result);
+    r.onerror = () => reject(new IdbError(r.error?.message ?? 'IndexedDB request failed', { cause: r.error, store, op }));
+  });
 }

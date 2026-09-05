@@ -25,7 +25,7 @@ export async function openDB<S, C extends StoresConfig<S>>(name: string, opts: O
       });
     };
     req.onerror = () =>
-      reject(upgradeError ?? new IdbError(req.error?.message ?? 'Failed to open database', { cause: req.error, op: 'open' }));
+      reject(upgradeError ?? new IdbError(req.error?.message ?? 'open failed', { cause: req.error, op: 'open' }));
     req.onsuccess = () => {
       const raw = req.result;
       raw.onversionchange = () => opts.onVersionChange?.();
@@ -64,7 +64,7 @@ async function upgrade(
       if (store.indexNames.contains(iname)) {
         const existing = store.index(iname);
         const same =
-          JSON.stringify(existing.keyPath) === JSON.stringify(i.path) &&
+          sameKeyPath(existing.keyPath as string | string[], i.path as string | string[]) &&
           existing.unique === i.unique &&
           existing.multiEntry === i.multiEntry;
         if (same) continue;
@@ -89,9 +89,13 @@ async function upgrade(
   }
   if (isDev()) {
     for (const name of Array.from(db.objectStoreNames)) {
-      if (!(name in schema)) console.warn(`idbkit: store "${name}" exists in database "${db.name}" but is not in the schema`);
+      if (!(name in schema)) console.warn(`idbkit: store "${name}" not in schema of "${db.name}"`);
     }
   }
+}
+
+function sameKeyPath(a: string | string[], b: string | string[]): boolean {
+  return typeof a === 'string' ? a === b : Array.isArray(b) && a.length === b.length && a.every((x, i) => x === b[i]);
 }
 
 function isDev(): boolean {
@@ -122,7 +126,7 @@ export class DatabaseImpl {
     try {
       raw = this.raw.transaction(stores as string | string[], mode);
     } catch (cause) {
-      throw new IdbError((cause as Error)?.message ?? 'Failed to start transaction', { cause, op: 'transaction' });
+      throw new IdbError((cause as Error)?.message ?? 'transaction failed', { cause, op: 'transaction' });
     }
     return new TransactionImpl(raw, { events: this.events });
   }

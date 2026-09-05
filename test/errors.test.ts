@@ -1,5 +1,5 @@
 import { beforeEach, expect, it } from 'vitest';
-import { IdbError, SchemaError, request, run } from '../src/errors';
+import { IdbError, SchemaError, request } from '../src/errors';
 import { openRaw, resetIndexedDB } from './helpers';
 
 beforeEach(resetIndexedDB);
@@ -25,10 +25,10 @@ it('request rejects with IdbError carrying cause, store and op', async () => {
   db.close();
 });
 
-it('run converts a synchronous throw into an IdbError rejection', async () => {
+it('request(thunk) converts a synchronous throw into an IdbError rejection', async () => {
   const db = await openRaw('e3', (d) => d.createObjectStore('s', { keyPath: 'id' }));
   const store = db.transaction('s', 'readonly').objectStore('s');
-  const err = await run(() => store.put({ id: 1 }), 's', 'put').catch((e: unknown) => e);
+  const err = await request(() => store.put({ id: 1 }), 's', 'put').catch((e: unknown) => e);
   expect(err).toBeInstanceOf(IdbError);
   expect((err as IdbError).op).toBe('put');
   expect(((err as IdbError).cause as DOMException).name).toBe('ReadOnlyError');

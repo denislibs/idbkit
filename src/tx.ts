@@ -1,5 +1,5 @@
 import { iterate } from './cursor';
-import { IdbError, request, run } from './errors';
+import { IdbError, request } from './errors';
 import type { Events } from './events';
 import { toKeyRange, type Key, type KeyRange } from './range';
 import type { ChangeEntry, Cursor } from './types';
@@ -31,37 +31,36 @@ export class TransactionImpl {
     this.raw.abort();
   }
 
-  private store(name: string): IDBObjectStore {
+  private store(name: string): IDBObjectStore;
+  private store(name: string, index: string | undefined): IDBObjectStore | IDBIndex;
+  private store(name: string, index?: string): IDBObjectStore | IDBIndex {
+    let s: IDBObjectStore;
     try {
-      return this.raw.objectStore(name);
+      s = this.raw.objectStore(name);
     } catch (cause) {
-      throw new IdbError(`Store "${name}" is not part of this transaction`, { cause, store: name });
+      throw new IdbError(`Store "${name}" not in transaction`, { cause, store: name });
     }
-  }
-
-  private source(name: string, index?: string): IDBObjectStore | IDBIndex {
-    const s = this.store(name);
     return index ? s.index(index) : s;
   }
 
   get(store: string, key: Key): Promise<unknown> {
-    return run(() => this.store(store).get(key), store, 'get');
+    return request(() => this.store(store).get(key), store, 'get');
   }
 
   getAll(store: string, opts: AnyQuery = {}): Promise<any[]> {
-    return run(() => this.source(store, opts.index).getAll(toKeyRange(opts.range), opts.limit), store, 'getAll');
+    return request(() => this.store(store, opts.index).getAll(toKeyRange(opts.range), opts.limit), store, 'getAll');
   }
 
   getAllKeys(store: string, opts: AnyQuery = {}): Promise<Key[]> {
-    return run(() => this.source(store, opts.index).getAllKeys(toKeyRange(opts.range), opts.limit), store, 'getAllKeys');
+    return request(() => this.store(store, opts.index).getAllKeys(toKeyRange(opts.range), opts.limit), store, 'getAllKeys');
   }
 
   count(store: string, opts: AnyQuery = {}): Promise<number> {
-    return run(() => this.source(store, opts.index).count(toKeyRange(opts.range)), store, 'count');
+    return request(() => this.store(store, opts.index).count(toKeyRange(opts.range)), store, 'count');
   }
 
   iterate(store: string, opts: AnyQuery = {}): AsyncIterable<Cursor<unknown>> {
-    return iterate(() => this.source(store, opts.index), toKeyRange(opts.range), opts.direction, opts.limit, store, {
+    return iterate(() => this.store(store, opts.index), toKeyRange(opts.range), opts.direction, opts.limit, store, {
       onUpdate: (pk, before, after) => this.record(store, pk, before, after),
       onDelete: (pk, before) => this.record(store, pk, before, undefined),
     });
@@ -70,13 +69,13 @@ export class TransactionImpl {
   async put(store: string, value: unknown): Promise<Key> {
     const s = this.store(store);
     const before = await this.readBefore(store, s, (value as Record<string, Key | undefined>)[s.keyPath as string]);
-    const key = await run(() => s.put(value), store, 'put');
+    const key = await request(() => s.put(value), store, 'put');
     this.record(store, key, before, value);
     return key;
   }
 
   async add(store: string, value: unknown): Promise<Key> {
-    const key = await run(() => this.store(store).add(value), store, 'add');
+    const key = await request(() => this.store(store).add(value), store, 'add');
     this.record(store, key, undefined, value);
     return key;
   }
@@ -84,12 +83,12 @@ export class TransactionImpl {
   async delete(store: string, key: Key): Promise<void> {
     const s = this.store(store);
     const before = await this.readBefore(store, s, key);
-    await run(() => s.delete(key), store, 'delete');
+    await request(() => s.delete(key), store, 'delete');
     this.record(store, key, before, undefined);
   }
 
   async clear(store: string): Promise<void> {
-    await run(() => this.store(store).clear(), store, 'clear');
+    await request(() => this.store(store).clear(), store, 'clear');
     this.changes.set(store, { store, keys: null, entries: [] });
   }
 
