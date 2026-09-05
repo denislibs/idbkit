@@ -71,6 +71,15 @@ describe('upgrade', () => {
     db.close();
   });
 
+  it('recreates an index whose path changes between array and string form', async () => {
+    const a = defineStores<{ s: { id: number; tag: string } }>()({ s: { key: 'id', indexes: { byTag: ['tag'] } } });
+    (await openDB('pathform', { version: 1, stores: a, broadcast: false })).close();
+    const b = defineStores<{ s: { id: number; tag: string } }>()({ s: { key: 'id', indexes: { byTag: 'tag' } } });
+    const db = await openDB('pathform', { version: 2, stores: b, broadcast: false });
+    expect(db.raw.transaction('s').objectStore('s').index('byTag').keyPath).toBe('tag');
+    db.close();
+  });
+
   it('keeps stores outside the schema and warns, deleteStore removes them', async () => {
     const raw = await openRaw('extra', (d) => {
       d.createObjectStore('legacy', { keyPath: 'id' });
@@ -79,14 +88,18 @@ describe('upgrade', () => {
     raw.close();
     const stores = defineStores<{ s: { id: number } }>()({ s: { key: 'id' } });
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const db = await openDB('extra', { version: 2, stores, broadcast: false });
-    expect(Array.from(db.raw.objectStoreNames)).toEqual(['legacy', 's']);
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('"legacy"'));
-    db.close();
-    const db3 = await openDB('extra', { version: 3, stores, broadcast: false, migrations: { 3: (tx) => tx.deleteStore('legacy') } });
-    expect(Array.from(db3.raw.objectStoreNames)).toEqual(['s']);
-    db3.close();
-    warn.mockRestore();
+    try {
+      const db = await openDB('extra', { version: 2, stores, broadcast: false });
+      expect(Array.from(db.raw.objectStoreNames)).toEqual(['legacy', 's']);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('"legacy"'));
+      db.close();
+      const db3 = await openDB('extra', { version: 3, stores, broadcast: false, migrations: { 3: (tx) => tx.deleteStore('legacy') } });
+      expect(Array.from(db3.raw.objectStoreNames)).toEqual(['s']);
+      expect(warn).toHaveBeenCalledTimes(1); // only the version-2 open warned; after deleteStore nothing is outside the schema
+      db3.close();
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('a throwing migration aborts the upgrade and rejects openDB with that error', async () => {
