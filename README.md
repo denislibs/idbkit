@@ -60,11 +60,19 @@ Inside a migration only `await` operations of the migration transaction. Awaitin
 
 ## Change events
 
-Events carry only the key and indexed fields of affected records, never full records. A range subscription needs the old value to notice a record leaving the range; idbkit reads it before `put`/`delete` only while such a subscription exists on that store. Across tabs, if the writing tab had no range subscription, range subscribers in other tabs receive the change regardless and should re-query.
+Events carry only the key and indexed fields of affected records, never full records. A range subscription needs the old value to notice a record leaving the range; idbkit reads it before `put`/`delete` only while such a subscription exists on that store. Across tabs, if the writing tab had no range subscription, range subscribers in other tabs receive the change regardless and should re-query. A broadcast failure is logged and never affects the write.
 
 ## Cursors
 
-`db.iterate(store, opts)` opens a readwrite transaction so `cursor.update()` and `cursor.delete()` work. Standard IndexedDB caveat: updating a record through an index cursor so that its index key moves ahead in iteration order makes the cursor visit it again. `db.iterate` awaits the transaction's commit on every exit path, including `break`, so any change events from the loop have already been delivered by the time it returns; a broadcast failure is logged and never affects the write.
+`db.iterate(store, opts)` opens a readwrite transaction so `cursor.update()` and `cursor.delete()` work. Standard IndexedDB caveat: updating a record through an index cursor so that its index key moves ahead in iteration order makes the cursor visit it again. `db.iterate` awaits the transaction's commit on every exit path, including `break`, so any change events from the loop have already been delivered by the time it returns.
+
+## Errors
+
+Every rejection from idbkit is an `IdbError` (with `cause` holding the original `DOMException`, plus `store` and `op` where applicable), except configuration mistakes caught before `openDB` opens anything, which throw `SchemaError`.
+
+## Lifecycle
+
+`db.close()` closes the connection and stops delivering events. `onBlocked` fires while another tab holds an older version open; `onVersionChange` fires on an already-open connection when another tab wants a newer version — idbkit does not close the connection for you, call `db.close()` when you're ready. Inside a migration, only `await` that migration's own transaction operations: an external `await` (fetch, a timer) commits the upgrade transaction early, and the migration's later failure is logged to `console.error` instead of rejecting `openDB` (which has already resolved).
 
 ## License
 
