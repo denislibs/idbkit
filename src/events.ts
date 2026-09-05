@@ -44,7 +44,11 @@ export class Events {
 
   emit(changes: Pending[]): void {
     this.dispatch(changes, 'local');
-    this.channel?.postMessage(changes);
+    try {
+      this.channel?.postMessage(changes);
+    } catch (err) {
+      console.error(err);
+    }
   }
 
   close(): void {
