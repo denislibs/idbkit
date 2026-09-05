@@ -144,13 +144,20 @@ export class DatabaseImpl {
   }
 
   /**
-   * readwrite so cursor.update/delete work without an explicit transaction. Awaits `done` so
-   * change events (fired on `complete`) have been delivered by the time full iteration resolves.
+   * readwrite so cursor.update/delete work without an explicit transaction. Awaits `done` on every
+   * exit path so change events have been delivered when the loop ends; on an abnormal exit the
+   * abort rejection is swallowed so it cannot mask the consumer's own error.
    */
   async *iterate(store: string, opts?: AnyQuery): AsyncIterable<Cursor<unknown>> {
     const tx = this.transaction(store, 'readwrite');
-    yield* tx.iterate(store, opts);
-    await tx.done;
+    let completed = false;
+    try {
+      yield* tx.iterate(store, opts);
+      completed = true;
+    } finally {
+      if (completed) await tx.done;
+      else await tx.done.catch(() => {});
+    }
   }
 
   put(store: string, value: unknown): Promise<Key> {

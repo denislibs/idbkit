@@ -81,6 +81,31 @@ it('cursor update and delete are recorded', async () => {
   ]);
 });
 
+it('db.iterate delivers events before the loop exits, also on break', async () => {
+  await db.put('users', { id: 'a', email: 'a@x', age: 1 });
+  await db.put('users', { id: 'b', email: 'b@x', age: 2 });
+  db.subscribe('users', (c) => seen.push(c));
+  for await (const cur of db.iterate('users')) {
+    await cur.update({ ...cur.value, age: 10 });
+    break;
+  }
+  expect(seen).toHaveLength(1);
+  expect(seen[0].keys).toEqual(['a']);
+});
+
+it('an error thrown inside a db.iterate loop is not masked by the abort', async () => {
+  await db.put('users', { id: 'a', email: 'a@x', age: 1 });
+  const boom = new Error('boom');
+  await expect(
+    (async () => {
+      for await (const cur of db.iterate('users')) {
+        await cur.update({ ...cur.value, age: 10 });
+        throw boom;
+      }
+    })(),
+  ).rejects.toBe(boom);
+});
+
 it('unsubscribe stops delivery and a throwing listener does not break others', async () => {
   const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
   const off = db.subscribe('users', () => { throw new Error('listener boom'); });
