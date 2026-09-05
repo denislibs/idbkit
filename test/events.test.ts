@@ -117,3 +117,70 @@ it('unsubscribe stops delivery and a throwing listener does not break others', a
   expect(seen).toHaveLength(2);
   consoleError.mockRestore();
 });
+
+it('range subscription sees records entering, moving inside, and leaving the range', async () => {
+  db.subscribe('users', { index: 'byAge', range: { gte: 18 } }, (c) => seen.push(c));
+  await db.put('users', { id: 'kid', email: 'k@x', age: 5 });
+  expect(seen).toEqual([]);
+  await db.put('users', { id: 'a', email: 'a@x', age: 20 }); // enters
+  expect(seen).toHaveLength(1);
+  expect(seen[0].entries).toEqual([{ key: 'a', after: { id: 'a', age: 20 } }]);
+  await db.put('users', { id: 'a', email: 'a@x', age: 25 }); // moves inside
+  expect(seen).toHaveLength(2);
+  expect(seen[1].entries).toEqual([{ key: 'a', before: { id: 'a', age: 20 }, after: { id: 'a', age: 25 } }]);
+  await db.put('users', { id: 'a', email: 'a@x', age: 3 }); // leaves — only visible thanks to `before`
+  expect(seen).toHaveLength(3);
+  expect(seen[2].entries).toEqual([{ key: 'a', before: { id: 'a', age: 25 }, after: { id: 'a', age: 3 } }]);
+  await db.put('users', { id: 'a', email: 'a@x', age: 4 }); // stays outside
+  expect(seen).toHaveLength(3);
+  await db.delete('users', 'kid'); // outside → ignored
+  expect(seen).toHaveLength(3);
+  await db.put('users', { id: 'b', email: 'b@x', age: 30 });
+  await db.delete('users', 'b'); // delete inside range
+  expect(seen).toHaveLength(5);
+  expect(seen[4].entries).toEqual([{ key: 'b', before: { id: 'b', age: 30 } }]);
+  await db.clear('users');
+  expect(seen[5].keys).toBeNull();
+});
+
+it('composite index range subscription', async () => {
+  type Post = { id: number; authorId: string; createdAt: number };
+  const s = defineStores<{ posts: Post }>()({ posts: { key: 'id', autoIncrement: true, indexes: { byAuthorDate: ['authorId', 'createdAt'] } } });
+  const pdb = await openDB('posts', { version: 1, stores: s, broadcast: false });
+  const got: Change[] = [];
+  pdb.subscribe('posts', { index: 'byAuthorDate', range: { gte: ['a', 0], lt: ['a', 100] } }, (c) => got.push(c));
+  await pdb.add('posts', { authorId: 'b', createdAt: 1 });
+  await pdb.add('posts', { authorId: 'a', createdAt: 500 });
+  expect(got).toEqual([]);
+  await pdb.add('posts', { authorId: 'a', createdAt: 50 });
+  expect(got).toHaveLength(1);
+  pdb.close();
+});
+
+it('reads the old value before put/delete only while a range subscription exists', async () => {
+  const get = vi.spyOn(IDBObjectStore.prototype, 'get');
+  await db.put('users', { id: 'a', email: 'a@x', age: 1 });
+  await db.delete('users', 'a');
+  expect(get).not.toHaveBeenCalled();
+
+  const off = db.subscribe('users', { index: 'byAge', range: { gte: 0 } }, () => {});
+  await db.put('users', { id: 'a', email: 'a@x', age: 1 });
+  expect(get).toHaveBeenCalledTimes(1);
+  await db.delete('users', 'a');
+  expect(get).toHaveBeenCalledTimes(2);
+  await db.add('users', { id: 'a', email: 'a@x', age: 1 }); // add never reads
+  expect(get).toHaveBeenCalledTimes(2);
+
+  off();
+  await db.put('users', { id: 'a', email: 'a@x', age: 2 });
+  expect(get).toHaveBeenCalledTimes(2);
+  get.mockRestore();
+});
+
+it('key subscriptions do not trigger old-value reads', async () => {
+  const get = vi.spyOn(IDBObjectStore.prototype, 'get');
+  db.subscribe('users', { key: 'a' }, () => {});
+  await db.put('users', { id: 'a', email: 'a@x', age: 1 });
+  expect(get).not.toHaveBeenCalled();
+  get.mockRestore();
+});
