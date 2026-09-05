@@ -8,8 +8,17 @@ type Sub = { store: string; filter?: Filter; listener: Listener };
 
 export class Events {
   private subs = new Set<Sub>();
+  private channel?: BroadcastChannel;
 
-  constructor(private schema: CompiledSchema, _channelName?: string) {}
+  constructor(
+    private schema: CompiledSchema,
+    channelName?: string,
+  ) {
+    if (channelName && typeof BroadcastChannel !== 'undefined') {
+      this.channel = new BroadcastChannel(channelName);
+      this.channel.onmessage = (e: MessageEvent<Pending[]>) => this.dispatch(e.data, 'remote');
+    }
+  }
 
   /** Only key + indexed fields, so events stay small and structured-cloneable. */
   pick(store: string, value: unknown): IndexValues {
@@ -35,9 +44,11 @@ export class Events {
 
   emit(changes: Pending[]): void {
     this.dispatch(changes, 'local');
+    this.channel?.postMessage(changes);
   }
 
   close(): void {
+    this.channel?.close();
     this.subs.clear();
   }
 
